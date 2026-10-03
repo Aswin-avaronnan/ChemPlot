@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-canvas: #F7F8FB;
+  --surface: #FFFFFF;
+  --surface-sunken: #EEF0F6;
+  --border: #DDE1EA;
+  --ink: #262B3A;
+  --ink-muted: #6B7280;
+  --accent-primary: #8FAADC;
+  --accent-success: #A7D8C5;
+  --accent-warning: #F2C98E;
+  --accent-danger: #E8A9A3;
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--ink);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbars for data tables and panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface-sunken);
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
