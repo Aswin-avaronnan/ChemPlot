@@ -28,6 +28,7 @@ htmlcov/
 backend/chemplot.db
 backend/storage/raw_files/*
 !backend/storage/raw_files/.gitkeep
+Fixtures/
 
 # Node / Next.js
 node_modules/
