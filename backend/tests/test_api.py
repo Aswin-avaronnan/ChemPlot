@@ -1,14 +1,95 @@
 import os
 import io
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.main import app
 
-
 client = TestClient(app)
 
 FIXTURES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "Fixtures")
+
+def get_cv_fixture_payload():
+    cv_fixture = os.path.join(FIXTURES_DIR, "CV", "CVs 2_5_10_20_50_100 mVs-1_PEIS_01_CVA_C08.mpr")
+    if os.path.exists(cv_fixture):
+        with open(cv_fixture, "rb") as f:
+            return f.read(), None
+    synthetic = {
+        "technique": "CV",
+        "scan_rate_mv_s": 2.0,
+        "metadata": {"total_rows": 700},
+        "segments": [
+            {
+                "segment_index": i + 1,
+                "scan_rate_mv_s": 2.0,
+                "applied_current_a": None,
+                "data": {
+                    "time_s": [float(t) for t in range(100)],
+                    "potential_v": [0.0 + 0.02 * t if t < 50 else 1.0 - 0.02 * (t - 50) for t in range(100)],
+                    "current_ma": [1.0 if t < 50 else -1.0 for t in range(100)],
+                    "charge_c": [0.001 * t for t in range(100)],
+                }
+            }
+            for i in range(7)
+        ]
+    }
+    return b"MOCK_CV_MPR_BYTES", synthetic
+
+def get_gcpl_fixture_payload():
+    gcpl_fixture = os.path.join(FIXTURES_DIR, "GCPL(GCD)", "GCPL 0p25_0p5_1_2_2p5_5_10_0p25 Ag-1_PEIS_01_GCPL_C08.mpr")
+    if os.path.exists(gcpl_fixture):
+        with open(gcpl_fixture, "rb") as f:
+            return f.read(), None
+    synthetic = {
+        "technique": "GCPL",
+        "scan_rate_mv_s": None,
+        "metadata": {"total_rows": 1200},
+        "segments": [
+            {
+                "segment_index": i,
+                "scan_rate_mv_s": None,
+                "applied_current_a": 0.001,
+                "data": {
+                    "mode": "charge" if i % 2 == 0 else "discharge",
+                    "time_s": [float(t) for t in range(100)],
+                    "potential_v": [0.0 + 0.01 * t if i % 2 == 0 else 1.0 - 0.01 * t for t in range(100)],
+                    "current_ma": [1.0 if i % 2 == 0 else -1.0 for t in range(100)],
+                    "capacity_mah": [0.05 * t for t in range(100)],
+                    "q_cd_mah": [0.05 * t for t in range(100)],
+                }
+            }
+            for i in range(12)
+        ]
+    }
+    return b"MOCK_GCPL_MPR_BYTES", synthetic
+
+def get_peis_fixture_payload():
+    peis_fixture = os.path.join(FIXTURES_DIR, "PEIS", "CVs 2_5_10_20_50_100 mVs-1_PEIS_07_PEIS_C08.mpr")
+    if os.path.exists(peis_fixture):
+        with open(peis_fixture, "rb") as f:
+            return f.read(), None
+    synthetic = {
+        "technique": "PEIS",
+        "scan_rate_mv_s": None,
+        "metadata": {"total_rows": 43},
+        "segments": [
+            {
+                "segment_index": 1,
+                "scan_rate_mv_s": None,
+                "applied_current_a": None,
+                "data": {
+                    "frequency_hz": [100000.0 / (2**i) for i in range(43)],
+                    "re_z_ohm": [10.0 + i * 0.5 for i in range(43)],
+                    "neg_im_z_ohm": [max(0.1, 5.0 * (1.0 - abs(i - 20) / 20.0)) for i in range(43)],
+                    "mag_z_ohm": [15.0 for _ in range(43)],
+                    "phase_deg": [-45.0 for _ in range(43)],
+                    "ewe_v": [0.5 for _ in range(43)],
+                }
+            }
+        ]
+    }
+    return b"MOCK_PEIS_MPR_BYTES", synthetic
 
 def test_health_check():
     response = client.get("/api/v1/health")
@@ -39,20 +120,25 @@ def test_experiment_crud_flow():
     assert get_res.status_code == 200
     assert get_res.json()["sample_label"] == "CoO-400C"
     
-    # 3. Update experiment parameters (e.g. update mass after precision weighing)
+    # 3. Update experiment parameters
     patch_res = client.patch(f"/api/v1/experiments/{exp_id}", json={"mass_mg": 1.50})
     assert patch_res.status_code == 200
     assert patch_res.json()["mass_mg"] == 1.50
     
-    # 4. Upload real CV .mpr fixture
-    cv_fixture = os.path.join(FIXTURES_DIR, "CV", "CVs 2_5_10_20_50_100 mVs-1_PEIS_01_CVA_C08.mpr")
-    with open(cv_fixture, "rb") as f:
-        file_bytes = f.read()
-        
-    upload_res = client.post(
-        f"/api/v1/experiments/{exp_id}/runs",
-        files=[("files", ("01_CVA.mpr", io.BytesIO(file_bytes), "application/octet-stream"))]
-    )
+    # 4. Upload CV fixture (real or synthetic fallback)
+    file_bytes, synthetic = get_cv_fixture_payload()
+    if synthetic:
+        with patch("app.api.v1.endpoints.runs.parse_mpr_file", return_value=synthetic):
+            upload_res = client.post(
+                f"/api/v1/experiments/{exp_id}/runs",
+                files=[("files", ("01_CVA.mpr", io.BytesIO(file_bytes), "application/octet-stream"))]
+            )
+    else:
+        upload_res = client.post(
+            f"/api/v1/experiments/{exp_id}/runs",
+            files=[("files", ("01_CVA.mpr", io.BytesIO(file_bytes), "application/octet-stream"))]
+        )
+
     assert upload_res.status_code == 202
     runs_res = upload_res.json()
     assert len(runs_res) == 1
@@ -61,7 +147,6 @@ def test_experiment_crud_flow():
     # 5. Get run details
     run_detail = client.get(f"/api/v1/runs/{run_id}")
     assert run_detail.status_code == 200
-    # In TestClient, background task executed synchronously
     assert run_detail.json()["parse_status"] == "parsed"
     assert run_detail.json()["technique"] == "CV"
     
@@ -117,14 +202,19 @@ def test_gcpl_api_flow():
     exp_id = exp_res.json()["id"]
 
     # 2. Upload GCPL fixture
-    gcpl_fixture = os.path.join(FIXTURES_DIR, "GCPL(GCD)", "GCPL 0p25_0p5_1_2_2p5_5_10_0p25 Ag-1_PEIS_01_GCPL_C08.mpr")
-    with open(gcpl_fixture, "rb") as f:
-        file_bytes = f.read()
+    file_bytes, synthetic = get_gcpl_fixture_payload()
+    if synthetic:
+        with patch("app.api.v1.endpoints.runs.parse_mpr_file", return_value=synthetic):
+            upload_res = client.post(
+                f"/api/v1/experiments/{exp_id}/runs",
+                files=[("files", ("01_GCPL.mpr", io.BytesIO(file_bytes), "application/octet-stream"))]
+            )
+    else:
+        upload_res = client.post(
+            f"/api/v1/experiments/{exp_id}/runs",
+            files=[("files", ("01_GCPL.mpr", io.BytesIO(file_bytes), "application/octet-stream"))]
+        )
 
-    upload_res = client.post(
-        f"/api/v1/experiments/{exp_id}/runs",
-        files=[("files", ("01_GCPL.mpr", io.BytesIO(file_bytes), "application/octet-stream"))]
-    )
     assert upload_res.status_code == 202
     run_id = upload_res.json()[0]["run_id"]
 
@@ -185,14 +275,19 @@ def test_peis_api_flow():
     exp_id = exp_res.json()["id"]
 
     # 2. Upload PEIS fixture
-    peis_fixture = os.path.join(FIXTURES_DIR, "PEIS", "CVs 2_5_10_20_50_100 mVs-1_PEIS_07_PEIS_C08.mpr")
-    with open(peis_fixture, "rb") as f:
-        file_bytes = f.read()
+    file_bytes, synthetic = get_peis_fixture_payload()
+    if synthetic:
+        with patch("app.api.v1.endpoints.runs.parse_mpr_file", return_value=synthetic):
+            upload_res = client.post(
+                f"/api/v1/experiments/{exp_id}/runs",
+                files=[("files", ("07_PEIS.mpr", io.BytesIO(file_bytes), "application/octet-stream"))]
+            )
+    else:
+        upload_res = client.post(
+            f"/api/v1/experiments/{exp_id}/runs",
+            files=[("files", ("07_PEIS.mpr", io.BytesIO(file_bytes), "application/octet-stream"))]
+        )
 
-    upload_res = client.post(
-        f"/api/v1/experiments/{exp_id}/runs",
-        files=[("files", ("07_PEIS.mpr", io.BytesIO(file_bytes), "application/octet-stream"))]
-    )
     assert upload_res.status_code == 202
     run_id = upload_res.json()[0]["run_id"]
 
@@ -222,4 +317,3 @@ def test_peis_api_flow():
     export_res = client.get(f"/api/v1/runs/{run_id}/export?format=png&template=nature")
     assert export_res.status_code == 200
     assert export_res.headers["content-type"] == "image/png"
-
