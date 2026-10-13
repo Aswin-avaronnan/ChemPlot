@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, Experiment } from "@/lib/api-client";
+import { trackRunsUploaded } from "@/lib/analytics";
 import { UploadCloud, FileSpreadsheet, X, AlertCircle, Scale, Square } from "lucide-react";
 
 interface MPRUploadModalProps {
@@ -72,6 +73,13 @@ export function MPRUploadModal({
       // 2. Upload files
       const declared = technique === "auto" ? undefined : technique;
       await api.uploadRuns(experiment.id, selectedFiles, declared);
+
+      trackRunsUploaded({
+        experimentId: experiment.id,
+        fileCount: selectedFiles.length,
+        declaredTechnique: declared,
+        filenames: selectedFiles.map((f) => f.name),
+      });
 
       setSelectedFiles([]);
       onUploadSuccess();

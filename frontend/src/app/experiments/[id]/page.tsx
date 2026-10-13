@@ -9,6 +9,7 @@ import {
   Segment,
   OverlayData,
 } from "@/lib/api-client";
+import { trackFigureExported, trackPlotViewed } from "@/lib/analytics";
 import { SampleParametersBar } from "@/components/experiment/sample-parameters-bar";
 import { SampleParametersModal } from "@/components/experiment/sample-parameters-modal";
 import { MPRUploadModal } from "@/components/upload/mpr-upload-modal";
@@ -115,20 +116,20 @@ export default function ExperimentPage() {
   // Initial load
   React.useEffect(() => {
     fetchExperiment();
-  }, [id]);
+  }, [fetchExperiment]);
 
   // Fetch overlay + segments when experiment updates
   React.useEffect(() => {
     if (experiment) {
       fetchOverlay();
     }
-  }, [experiment]);
+  }, [experiment, fetchOverlay]);
 
   React.useEffect(() => {
     if (selectedRunId) {
       fetchRunSegments(selectedRunId);
     }
-  }, [selectedRunId]);
+  }, [selectedRunId, fetchRunSegments]);
 
   // Polling while runs are pending/parsing
   React.useEffect(() => {
@@ -149,6 +150,18 @@ export default function ExperimentPage() {
   // ── Derived state ──────────────────────────────────────────────────────────
   const selectedRun = experiment?.technique_runs.find((r) => r.id === selectedRunId) || null;
   const currentTechnique = selectedRun?.technique || overlayData?.runs[0]?.technique;
+
+  // Track plot viewed
+  React.useEffect(() => {
+    if (activeTab === "plot" && experiment && (selectedRunId || overlayData?.runs.length)) {
+      trackPlotViewed({
+        experimentId: experiment.id,
+        technique: currentTechnique,
+        mode: plotMode,
+        runId: selectedRunId,
+      });
+    }
+  }, [activeTab, experiment, selectedRunId, overlayData, plotMode, currentTechnique]);
 
   const cvOverlayRuns = overlayData?.runs.filter((r) => r.technique === "CV") || [];
   const gcplRuns = overlayData?.runs.filter((r) => r.technique === "GCPL") || [];
@@ -357,6 +370,7 @@ export default function ExperimentPage() {
         {tech === "CV" && (
           <CVAnalysisCard
             runId={selectedRunId}
+            experimentId={experiment.id}
             massMg={massMg}
             areaCm2={areaCm2}
             scanRateMvS={scanRate || undefined}
@@ -365,12 +379,17 @@ export default function ExperimentPage() {
         {["GCPL", "CYCLING"].includes(tech) && (
           <GCDAnalysisCard
             runId={selectedRunId}
+            experimentId={experiment.id}
             massMg={massMg}
             areaCm2={areaCm2}
           />
         )}
         {["PEIS", "SPEIS"].includes(tech) && (
-          <PEISAnalysisCard runId={selectedRunId} areaCm2={areaCm2} />
+          <PEISAnalysisCard
+            runId={selectedRunId}
+            experimentId={experiment.id}
+            areaCm2={areaCm2}
+          />
         )}
       </div>
     );
@@ -411,6 +430,17 @@ export default function ExperimentPage() {
               <a
                 href={api.getExportUrl(selectedRunId, exportFormat, exportTemplate)}
                 download
+                onClick={() => {
+                  if (experiment && selectedRunId) {
+                    trackFigureExported({
+                      experimentId: experiment.id,
+                      runId: selectedRunId,
+                      technique: selectedRun?.technique || "Unknown",
+                      format: exportFormat,
+                      template: exportTemplate,
+                    });
+                  }
+                }}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-surface hover:bg-surface-sunken text-ink-muted hover:text-ink transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />

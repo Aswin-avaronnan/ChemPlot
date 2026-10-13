@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Experiment, api } from "@/lib/api-client";
+import { trackSampleParamsUpdated } from "@/lib/analytics";
 import { FlaskConical, Scale, Square, Info } from "lucide-react";
 
 interface SampleParametersModalProps {
@@ -92,6 +93,13 @@ export function SampleParametersModal({
         reference_electrode: refElectrode,
         electrolyte: electrolyte,
         sample_label: sampleLabel,
+      });
+
+      trackSampleParamsUpdated({
+        experimentId: experiment.id,
+        massMg: finalMassMg,
+        areaCm2: finalAreaCm2,
+        activePct: parsedPct,
       });
 
       onSaved(updated);

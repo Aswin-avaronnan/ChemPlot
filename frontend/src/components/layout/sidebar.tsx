@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { api, Experiment } from "@/lib/api-client";
+import { trackExperimentCreated } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { FlaskConical, Plus, Loader2, ChevronRight, Beaker } from "lucide-react";
 
@@ -38,6 +39,7 @@ export function Sidebar() {
     try {
       const exp = await api.createExperiment({ name: trimmed });
       setExperiments((prev) => [exp, ...prev]);
+      trackExperimentCreated({ experimentId: exp.id, name: exp.name });
       setNewExpName("");
       setShowCreateInput(false);
     } catch (err) {

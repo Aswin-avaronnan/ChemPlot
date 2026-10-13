@@ -5,16 +5,18 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, Analysis } from "@/lib/api-client";
+import { trackAnalysisComputed } from "@/lib/analytics";
 import { Calculator, Check, AlertCircle } from "lucide-react";
 
 interface CVAnalysisCardProps {
   runId: string;
+  experimentId?: string;
   massMg?: number;
   areaCm2?: number;
   scanRateMvS?: number;
 }
 
-export function CVAnalysisCard({ runId, massMg, areaCm2, scanRateMvS }: CVAnalysisCardProps) {
+export function CVAnalysisCard({ runId, experimentId, massMg, areaCm2, scanRateMvS }: CVAnalysisCardProps) {
   const [convention, setConvention] = React.useState<string>("full_window");
   const [analysis, setAnalysis] = React.useState<Analysis | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -45,6 +47,12 @@ export function CVAnalysisCard({ runId, massMg, areaCm2, scanRateMvS }: CVAnalys
         scan_rate_mv_s: scanRateMvS,
       });
       setAnalysis(res);
+      trackAnalysisComputed({
+        experimentId: experimentId || "",
+        runId,
+        analysisType: "cv_capacitance",
+        convention,
+      });
     } catch (err: any) {
       setError(err.message || "Calculation failed");
     } finally {

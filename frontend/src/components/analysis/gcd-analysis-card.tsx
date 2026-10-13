@@ -5,15 +5,17 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, Analysis } from "@/lib/api-client";
+import { trackAnalysisComputed } from "@/lib/analytics";
 import { Zap, AlertCircle } from "lucide-react";
 
 interface GCDAnalysisCardProps {
   runId: string;
+  experimentId?: string;
   massMg?: number;
   areaCm2?: number;
 }
 
-export function GCDAnalysisCard({ runId, massMg, areaCm2 }: GCDAnalysisCardProps) {
+export function GCDAnalysisCard({ runId, experimentId, massMg, areaCm2 }: GCDAnalysisCardProps) {
   const [convention, setConvention] = React.useState<string>("nominal_window");
   const [analysis, setAnalysis] = React.useState<Analysis | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -43,6 +45,12 @@ export function GCDAnalysisCard({ runId, massMg, areaCm2 }: GCDAnalysisCardProps
         area_cm2: areaCm2,
       });
       setAnalysis(res);
+      trackAnalysisComputed({
+        experimentId: experimentId || "",
+        runId,
+        analysisType: "gcd_specific_capacitance",
+        convention,
+      });
     } catch (err: any) {
       setError(err.message || "Calculation failed");
     } finally {
@@ -70,7 +78,7 @@ export function GCDAnalysisCard({ runId, massMg, areaCm2 }: GCDAnalysisCardProps
             className="w-full px-2.5 py-1.5 bg-surface text-ink border border-border rounded focus:outline-none focus:ring-1 focus:ring-accent-primary"
           >
             <option value="nominal_window">Nominal Window (ΔV = Vstart - Vend)</option>
-            <option value="exclude_ir_drop">Exclude IR Drop (ΔV' = ΔV - IRdrop at discharge onset)</option>
+            <option value="exclude_ir_drop">{"Exclude IR Drop (ΔV' = ΔV - IRdrop at discharge onset)"}</option>
           </select>
           <p className="text-[11px] text-ink-muted mt-1">
             C = (I · Δt) / (m · ΔV), ESR = IRdrop / (2 · I)

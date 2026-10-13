@@ -5,14 +5,16 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, Analysis } from "@/lib/api-client";
+import { trackAnalysisComputed } from "@/lib/analytics";
 import { Activity, AlertCircle } from "lucide-react";
 
 interface PEISAnalysisCardProps {
   runId: string;
+  experimentId?: string;
   areaCm2?: number;
 }
 
-export function PEISAnalysisCard({ runId, areaCm2 }: PEISAnalysisCardProps) {
+export function PEISAnalysisCard({ runId, experimentId, areaCm2 }: PEISAnalysisCardProps) {
   const [analysis, setAnalysis] = React.useState<Analysis | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -39,6 +41,12 @@ export function PEISAnalysisCard({ runId, areaCm2 }: PEISAnalysisCardProps) {
         area_cm2: areaCm2,
       });
       setAnalysis(res);
+      trackAnalysisComputed({
+        experimentId: experimentId || "",
+        runId,
+        analysisType: "peis_rs",
+        convention: "real_intercept",
+      });
     } catch (err: any) {
       setError(err.message || "Calculation failed");
     } finally {

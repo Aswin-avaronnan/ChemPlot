@@ -28,7 +28,6 @@ htmlcov/
 backend/chemplot.db
 backend/storage/raw_files/*
 !backend/storage/raw_files/.gitkeep
-Fixtures/
 
 # Node / Next.js
 node_modules/
@@ -45,3 +44,9 @@ next-env.d.ts
 Thumbs.db
 .vscode/
 .idea/
+
+#files
+ChemPlot_Build_Spec.md
+Status.md
+SETUP.md
+Fixtures
