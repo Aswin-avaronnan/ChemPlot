@@ -3,13 +3,15 @@
 import * as React from "react";
 import { PlotContainer } from "./plot-container";
 import { Segment } from "@/lib/api-client";
-import { getSeriesColor } from "@/lib/palette";
+import { PlotStyleConfig, PRESETS, getPaletteColor, applyStyleToPlotlyLayout } from "@/lib/plot-style";
 
 interface NyquistPlotProps {
   segments?: Segment[];
   areaCm2?: number;
   title?: string;
   seriesResistanceRs?: number;
+  styleConfig?: PlotStyleConfig;
+  plotId?: string;
 }
 
 export function NyquistPlot({
@@ -17,11 +19,17 @@ export function NyquistPlot({
   areaCm2,
   title,
   seriesResistanceRs,
+  styleConfig = PRESETS.acs,
+  plotId = "nyquist-plot-view",
 }: NyquistPlotProps) {
   const [normalizeArea, setNormalizeArea] = React.useState<boolean>(false);
   const hasArea = areaCm2 !== undefined && areaCm2 !== null && areaCm2 > 0;
 
   const multiplier = normalizeArea && hasArea ? areaCm2 : 1.0;
+
+  const strokeWidth = styleConfig.strokeWidth || 2.2;
+  const isMarkerOpen = styleConfig.markerStyle === "circle-open";
+  const isMarkerFilled = styleConfig.markerStyle === "circle-filled";
 
   const plotData: Plotly.Data[] = React.useMemo(() => {
     const traces: Plotly.Data[] = [];
@@ -31,7 +39,7 @@ export function NyquistPlot({
       const negIm: number[] = ((seg.data?.neg_im_z_ohm || []) as number[]).map((v: number) => v * multiplier);
       const freq: number[] = seg.data?.frequency_hz || [];
 
-      // Custom text for tooltips with frequency
+      const color = getPaletteColor(styleConfig.paletteId, idx);
       const text = freq.map((f: number, i: number) => `f: ${f.toFixed(2)} Hz<br>Z': ${re[i]?.toFixed(2)}<br>-Z'': ${negIm[i]?.toFixed(2)}`);
 
       traces.push({
@@ -41,19 +49,19 @@ export function NyquistPlot({
         mode: "lines+markers",
         name: `EIS Sweep ${seg.segment_index}`,
         marker: {
-          size: 5,
-          color: getSeriesColor(idx),
+          symbol: isMarkerOpen ? "circle-open" : "circle",
+          size: styleConfig.markerSize || 5,
+          color: color,
         },
         line: {
-          color: getSeriesColor(idx),
-          width: 1.5,
+          color: color,
+          width: strokeWidth,
         },
         text: text,
         hoverinfo: "text",
       });
     });
 
-    // Mark series resistance Rs if provided
     if (seriesResistanceRs) {
       const rsVal = seriesResistanceRs * multiplier;
       traces.push({
@@ -65,17 +73,38 @@ export function NyquistPlot({
         text: ["Rs"],
         textposition: "top right",
         marker: {
-          size: 10,
-          color: "#E8A9A3",
+          size: 9,
+          color: "#C00000",
           symbol: "cross",
         },
       });
     }
 
     return traces;
-  }, [segments, multiplier, seriesResistanceRs, normalizeArea]);
+  }, [segments, multiplier, seriesResistanceRs, normalizeArea, styleConfig, strokeWidth, isMarkerOpen]);
 
   const unitStr = normalizeArea ? "Ω·cm²" : "Ω";
+  const defaultXLabel = `Z' (${unitStr})`;
+  const defaultYLabel = `-Z'' (${unitStr})`;
+
+  const styledLayout = React.useMemo(() => {
+    const base = applyStyleToPlotlyLayout(
+      {},
+      styleConfig,
+      defaultXLabel,
+      defaultYLabel,
+      title
+    );
+    // Enforce 1:1 complex impedance aspect ratio
+    return {
+      ...base,
+      yaxis: {
+        ...base.yaxis,
+        scaleanchor: "x",
+        scaleratio: 1,
+      },
+    };
+  }, [styleConfig, defaultXLabel, defaultYLabel, title]);
 
   return (
     <div className="flex flex-col h-full space-y-3">
@@ -87,7 +116,7 @@ export function NyquistPlot({
             <button
               onClick={() => setNormalizeArea(false)}
               className={`px-2.5 py-1 text-xs rounded transition-colors ${
-                !normalizeArea ? "bg-surface text-ink font-medium shadow-sm" : "text-ink-muted hover:text-ink"
+                !normalizeArea ? "bg-surface text-ink font-medium shadow-xs" : "text-ink-muted hover:text-ink"
               }`}
             >
               Raw (Ω)
@@ -98,7 +127,7 @@ export function NyquistPlot({
               title={!hasArea ? "Specify electrode area in sample parameters" : ""}
               className={`px-2.5 py-1 text-xs rounded transition-colors ${
                 normalizeArea
-                  ? "bg-surface text-ink font-medium shadow-sm"
+                  ? "bg-surface text-ink font-medium shadow-xs"
                   : "text-ink-muted hover:text-ink disabled:opacity-40"
               }`}
             >
@@ -112,30 +141,13 @@ export function NyquistPlot({
         </div>
       </div>
 
-      {/* Plot Canvas with 1:1 Aspect Ratio */}
-      <div className="w-full flex-1 min-h-[440px] bg-surface border border-border rounded p-2">
+      {/* Plot Canvas */}
+      <div className="w-full flex-1 min-h-[440px] bg-surface border border-border rounded-lg p-2.5 flex items-center justify-center">
         <PlotContainer
+          plotId={plotId}
           data={plotData}
-          layout={{
-            title: title ? { text: title, font: { size: 13, color: "#262B3A" } } : undefined,
-            xaxis: {
-              title: { text: `Z' (${unitStr})`, font: { size: 11, color: "#262B3A" } },
-              zeroline: true,
-            },
-            yaxis: {
-              title: { text: `-Z'' (${unitStr})`, font: { size: 11, color: "#262B3A" } },
-              scaleanchor: "x",
-              scaleratio: 1,
-              zeroline: true,
-            },
-            showlegend: true,
-            legend: {
-              orientation: "h",
-              y: -0.2,
-              x: 0,
-              font: { size: 10 },
-            },
-          }}
+          layout={styledLayout}
+          aspectRatio={styleConfig.aspectRatio}
         />
       </div>
     </div>

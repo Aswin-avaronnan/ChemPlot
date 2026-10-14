@@ -3,48 +3,38 @@
 import * as React from "react";
 import { PlotContainer } from "./plot-container";
 import { Segment } from "@/lib/api-client";
-import { getSeriesColor } from "@/lib/palette";
+import { PlotStyleConfig, PRESETS, getPaletteColor, applyStyleToPlotlyLayout } from "@/lib/plot-style";
 
 interface CyclingRetentionPlotProps {
-  /** All GCPL/CYCLING segments from one or more runs */
   segments?: Segment[];
   massMg?: number;
   areaCm2?: number;
   title?: string;
-  /** Applied current in Amperes (used to label x-axis if charge rate known) */
   appliedCurrentA?: number;
+  styleConfig?: PlotStyleConfig;
+  plotId?: string;
 }
 
-/**
- * Capacity vs. cycle-number chart (capacity fade / cycling stability).
- *
- * Segments are expected to alternate charge / discharge half-cycles.
- * We pair them up by half-cycle index (0=charge, 1=discharge, 2=charge, …)
- * and plot:
- *   - discharge capacity (mAh or mAh/g if mass provided)
- *   - coulombic efficiency (%) on a secondary y-axis
- *
- * This is the "cycling retention" view mandated by the spec (§2 core plots:
- * "cycling retention").
- */
 export function CyclingRetentionPlot({
   segments = [],
   massMg,
   areaCm2,
   title,
   appliedCurrentA,
+  styleConfig = PRESETS.acs,
+  plotId = "cycling-retention-plot-view",
 }: CyclingRetentionPlotProps) {
   const hasMass = massMg !== undefined && massMg !== null && massMg > 0;
   const massG = hasMass ? (massMg || 1) / 1000.0 : 1;
 
-  const [yMode, setYMode] = React.useState<"capacity" | "capacitance">(
-    "capacity"
-  );
+  const [yMode, setYMode] = React.useState<"capacity" | "capacitance">("capacity");
 
-  // Build per-full-cycle stats from alternating charge/discharge half-cycles.
+  const strokeWidth = styleConfig.strokeWidth || 2.2;
+  const isMarkerOpen = styleConfig.markerStyle === "circle-open";
+  const isMarkerFilled = styleConfig.markerStyle === "circle-filled";
+
+  // Build per-full-cycle stats
   const cycleStats = React.useMemo(() => {
-    // Group segments into pairs: even index = charge, odd = discharge
-    // (or detect via data.mode field if present)
     const discharge: Segment[] = [];
     const charge: Segment[] = [];
 
@@ -55,7 +45,6 @@ export function CyclingRetentionPlot({
       } else if (mode === "charge") {
         charge.push(seg);
       } else {
-        // Fallback: even half-cycle index = charge, odd = discharge
         if (seg.segment_index % 2 === 0) {
           charge.push(seg);
         } else {
@@ -64,19 +53,14 @@ export function CyclingRetentionPlot({
       }
     });
 
-    // Build per-cycle stats, using discharge segments as the primary series
     return discharge.map((disSeg, cycleIdx) => {
       const chSeg = charge[cycleIdx];
 
-      // Discharge capacity: prefer q_cd_mah, else integrate I*dt
       let qDis = 0;
       if (disSeg.data?.q_cd_mah && disSeg.data.q_cd_mah.length > 0) {
         const arr = disSeg.data.q_cd_mah as number[];
         qDis = Math.abs(arr[arr.length - 1] - arr[0]);
-      } else if (
-        disSeg.data?.capacity_mah &&
-        disSeg.data.capacity_mah.length > 0
-      ) {
+      } else if (disSeg.data?.capacity_mah && disSeg.data.capacity_mah.length > 0) {
         const arr = disSeg.data.capacity_mah as number[];
         qDis = Math.abs(arr[arr.length - 1] - arr[0]);
       } else if (disSeg.data?.time_s && disSeg.data?.current_ma) {
@@ -84,33 +68,25 @@ export function CyclingRetentionPlot({
         const i = disSeg.data.current_ma as number[];
         const dt = t.length > 1 ? t[t.length - 1] - t[0] : 0;
         const iMean = i.reduce((s: number, v: number) => s + Math.abs(v), 0) / (i.length || 1);
-        qDis = (iMean * dt) / 3600; // mAh
+        qDis = (iMean * dt) / 3600;
       }
 
-      let qCh = qDis; // fallback: assume 100% CE if no charge data
+      let qCh = qDis;
       if (chSeg) {
         if (chSeg.data?.q_cd_mah && chSeg.data.q_cd_mah.length > 0) {
           const arr = chSeg.data.q_cd_mah as number[];
           qCh = Math.abs(arr[arr.length - 1] - arr[0]);
-        } else if (
-          chSeg.data?.capacity_mah &&
-          chSeg.data.capacity_mah.length > 0
-        ) {
+        } else if (chSeg.data?.capacity_mah && chSeg.data.capacity_mah.length > 0) {
           const arr = chSeg.data.capacity_mah as number[];
           qCh = Math.abs(arr[arr.length - 1] - arr[0]);
         }
       }
 
-      const coulombicEfficiency =
-        qCh > 0 ? Math.min((qDis / qCh) * 100, 100) : 100;
-
-      // Specific capacity mAh/g if mass available
+      const coulombicEfficiency = qCh > 0 ? Math.min((qDis / qCh) * 100, 100) : 100;
       const specificCapacity = hasMass ? qDis / massG : qDis;
 
-      // Specific capacitance F/g: C = I*Δt/(m*ΔV)
       let specificCapacitance: number | null = null;
-      const iA =
-        disSeg.applied_current_a || appliedCurrentA || 0;
+      const iA = disSeg.applied_current_a || appliedCurrentA || 0;
       if (iA > 0 && disSeg.data?.time_s && disSeg.data?.potential_v) {
         const t = disSeg.data.time_s as number[];
         const v = disSeg.data.potential_v as number[];
@@ -132,6 +108,9 @@ export function CyclingRetentionPlot({
     });
   }, [segments, hasMass, massG, appliedCurrentA]);
 
+  const color1 = getPaletteColor(styleConfig.paletteId, 0);
+  const color2 = getPaletteColor(styleConfig.paletteId, 1);
+
   const plotData: Plotly.Data[] = React.useMemo(() => {
     const cycleNums = cycleStats.map((s) => s.cycleNumber);
 
@@ -146,13 +125,18 @@ export function CyclingRetentionPlot({
         y: primaryY,
         type: "scatter",
         mode: "lines+markers",
-        name: yMode === "capacity"
-          ? hasMass
-            ? "Specific Capacity (mAh/g)"
-            : "Discharge Capacity (mAh)"
-          : "Specific Capacitance (F/g)",
-        marker: { size: 5, color: getSeriesColor(0) },
-        line: { color: getSeriesColor(0), width: 1.8 },
+        name:
+          yMode === "capacity"
+            ? hasMass
+              ? "Specific Capacity (mAh g⁻¹)"
+              : "Discharge Capacity (mAh)"
+            : "Specific Capacitance (F g⁻¹)",
+        marker: {
+          symbol: isMarkerOpen ? "circle-open" : "circle",
+          size: styleConfig.markerSize || 5,
+          color: color1,
+        },
+        line: { color: color1, width: strokeWidth },
         yaxis: "y1",
         hovertemplate:
           yMode === "capacity"
@@ -165,22 +149,70 @@ export function CyclingRetentionPlot({
         type: "scatter",
         mode: "lines+markers",
         name: "Coulombic Efficiency (%)",
-        marker: { size: 4, color: getSeriesColor(2), symbol: "square" },
-        line: { color: getSeriesColor(2), width: 1.4, dash: "dot" },
+        marker: {
+          symbol: isMarkerOpen ? "square-open" : "square",
+          size: Math.max(styleConfig.markerSize - 1, 4),
+          color: color2,
+        },
+        line: { color: color2, width: Math.max(strokeWidth - 0.6, 1.4), dash: "dot" },
         yaxis: "y2",
         hovertemplate: `Cycle %{x}<br>CE: %{y:.1f}%<extra></extra>`,
       },
     ];
 
     return traces;
-  }, [cycleStats, yMode, hasMass]);
+  }, [cycleStats, yMode, hasMass, color1, color2, strokeWidth, isMarkerOpen, styleConfig.markerSize]);
 
-  const primaryYLabel =
+  const defaultYLabel =
     yMode === "capacity"
       ? hasMass
-        ? "Specific Capacity (mAh·g⁻¹)"
+        ? "Specific Capacity (mAh g⁻¹)"
         : "Discharge Capacity (mAh)"
-      : "Specific Capacitance (F·g⁻¹)";
+      : "Specific Capacitance (F g⁻¹)";
+
+  const styledLayout = React.useMemo(() => {
+    const base = applyStyleToPlotlyLayout(
+      {},
+      styleConfig,
+      "Cycle Number",
+      defaultYLabel,
+      title
+    );
+
+    const tickVal = styleConfig.tickDirection === "none" ? "" : styleConfig.tickDirection;
+
+    return {
+      ...base,
+      yaxis2: {
+        title: {
+          text: "Coulombic Efficiency (%)",
+          font: {
+            family: styleConfig.fontFamily,
+            size: styleConfig.axisLabelFontSize,
+            color: color2,
+            weight: styleConfig.isBoldLabels ? "bold" : "normal",
+          },
+        },
+        tickfont: {
+          family: styleConfig.fontFamily,
+          size: styleConfig.tickFontSize,
+          color: color2,
+        },
+        showline: true,
+        linecolor: styleConfig.axisColor,
+        linewidth: styleConfig.axisLineWidth,
+        ticks: tickVal,
+        ticklen: styleConfig.tickLength,
+        tickwidth: styleConfig.axisLineWidth,
+        tickcolor: styleConfig.axisColor,
+        overlaying: "y",
+        side: "right",
+        range: [0, 105],
+        showgrid: false,
+        zeroline: false,
+      },
+    };
+  }, [styleConfig, defaultYLabel, title, color2]);
 
   if (cycleStats.length === 0) {
     return (
@@ -209,26 +241,25 @@ export function CyclingRetentionPlot({
               onClick={() => setYMode("capacity")}
               className={`px-2.5 py-1 text-xs rounded transition-colors ${
                 yMode === "capacity"
-                  ? "bg-surface text-ink font-medium shadow-sm"
+                  ? "bg-surface text-ink font-medium shadow-xs"
                   : "text-ink-muted hover:text-ink"
               }`}
             >
-              {hasMass ? "mAh/g" : "Capacity (mAh)"}
+              {hasMass ? "mAh g⁻¹" : "Capacity (mAh)"}
             </button>
             <button
               onClick={() => setYMode("capacitance")}
               className={`px-2.5 py-1 text-xs rounded transition-colors ${
                 yMode === "capacitance"
-                  ? "bg-surface text-ink font-medium shadow-sm"
+                  ? "bg-surface text-ink font-medium shadow-xs"
                   : "text-ink-muted hover:text-ink"
               }`}
             >
-              F/g (Capacitance)
+              F g⁻¹ (Capacitance)
             </button>
           </div>
         </div>
 
-        {/* Retention summary badge */}
         {retentionPct && (
           <div className="text-xs font-mono text-ink-muted">
             Retention after {cycleStats.length} cycles:{" "}
@@ -248,33 +279,12 @@ export function CyclingRetentionPlot({
       </div>
 
       {/* Plot canvas */}
-      <div className="w-full flex-1 min-h-[440px] bg-surface border border-border rounded p-2">
+      <div className="w-full flex-1 min-h-[440px] bg-surface border border-border rounded-lg p-2.5 flex items-center justify-center">
         <PlotContainer
+          plotId={plotId}
           data={plotData}
-          layout={{
-            title: title ? { text: title, font: { size: 13, color: "#262B3A" } } : undefined,
-            xaxis: {
-              title: { text: "Cycle Number", font: { size: 11, color: "#262B3A" } },
-              zeroline: false,
-            },
-            yaxis: {
-              title: { text: primaryYLabel, font: { size: 11, color: "#262B3A" } },
-              zeroline: false,
-            },
-            yaxis2: {
-              title: { text: "Coulombic Efficiency (%)", font: { size: 11, color: "#009E73" } },
-              overlaying: "y",
-              side: "right",
-              range: [0, 105],
-            },
-            showlegend: true,
-            legend: {
-              orientation: "h",
-              y: -0.2,
-              x: 0,
-              font: { size: 10 },
-            },
-          }}
+          layout={styledLayout}
+          aspectRatio={styleConfig.aspectRatio}
         />
       </div>
     </div>

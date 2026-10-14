@@ -93,7 +93,7 @@ export function trackFigureExported(params: {
   runId: string;
   technique: string;
   format: "png" | "svg" | "pdf";
-  template: "nature" | "acs" | "default";
+  template: "nature" | "acs" | "default" | string;
 }): void {
   trackEvent("figure_exported", {
     experiment_id: params.experimentId,
