@@ -15,8 +15,17 @@ router = APIRouter()
 def export_run_figure(
     run_id: str,
     format: str = Query("png", pattern="^(png|svg|pdf)$"),
-    template: str = Query("nature", pattern="^(nature|acs|default)$"),
+    template: str = Query("acs", pattern="^(nature|acs|default)$"),
     title: Optional[str] = None,
+    x_label: Optional[str] = None,
+    y_label: Optional[str] = None,
+    x_min: Optional[float] = None,
+    x_max: Optional[float] = None,
+    y_min: Optional[float] = None,
+    y_max: Optional[float] = None,
+    stroke_width: Optional[float] = None,
+    axis_linewidth: Optional[float] = None,
+    palette: Optional[str] = None,
     conn: sqlite3.Connection = Depends(get_db),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -42,7 +51,16 @@ def export_run_figure(
         fmt=format,
         mass_mg=mass_mg,
         area_cm2=area_cm2,
-        title=fig_title
+        title=fig_title,
+        custom_x_label=x_label,
+        custom_y_label=y_label,
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
+        stroke_width=stroke_width,
+        axis_linewidth=axis_linewidth,
+        palette_name=palette,
     )
     
     media_types = {

@@ -3,8 +3,7 @@
 import * as React from "react";
 import { PlotContainer } from "./plot-container";
 import { Segment, OverlayRun } from "@/lib/api-client";
-import { getSeriesColor } from "@/lib/palette";
-import { Button } from "@/components/ui/button";
+import { PlotStyleConfig, PRESETS, getPaletteColor, applyStyleToPlotlyLayout } from "@/lib/plot-style";
 
 export type CurrentUnit = "raw" | "gravimetric" | "areal";
 
@@ -15,6 +14,8 @@ interface CVPlotProps {
   areaCm2?: number;
   title?: string;
   referenceElectrode?: string;
+  styleConfig?: PlotStyleConfig;
+  plotId?: string;
 }
 
 export function CVPlot({
@@ -24,6 +25,8 @@ export function CVPlot({
   areaCm2,
   title,
   referenceElectrode = "Ref",
+  styleConfig = PRESETS.acs,
+  plotId = "cv-plot-view",
 }: CVPlotProps) {
   const [unit, setUnit] = React.useState<CurrentUnit>("raw");
   const [selectedCycle, setSelectedCycle] = React.useState<string>("all");
@@ -58,10 +61,14 @@ export function CVPlot({
       return rawMa; // in mA
     };
 
+    const strokeWidth = styleConfig.strokeWidth || 2.2;
+    const isMarkerOpen = styleConfig.markerStyle === "circle-open";
+    const isMarkerFilled = styleConfig.markerStyle === "circle-filled";
+    const traceMode = isMarkerOpen || isMarkerFilled ? "lines+markers" : "lines";
+
     if (overlayRuns.length > 0) {
       // Multi-scan-rate overlay
       overlayRuns.forEach((run, rIdx) => {
-        // Take last/stabilized cycle for each scan rate in overlay view
         const targetSeg = run.segments[run.segments.length - 1] || run.segments[0];
         if (!targetSeg || !targetSeg.data?.potential_v) return;
 
@@ -69,20 +76,31 @@ export function CVPlot({
         const rawI = targetSeg.data.current_ma || [];
         const y = calculateY(rawI, run.mass_mg, run.area_cm2);
 
+        const color = getPaletteColor(styleConfig.paletteId, rIdx);
         const label = run.scan_rate_mv_s
-          ? `${run.scan_rate_mv_s} mV/s (${run.filename.split("_")[0]})`
-          : run.filename;
+          ? `${run.scan_rate_mv_s} mV/s`
+          : run.filename.split(".")[0];
+
+        const markerConfig: any =
+          traceMode === "lines+markers"
+            ? {
+                symbol: isMarkerOpen ? "circle-open" : "circle",
+                size: styleConfig.markerSize || 5,
+                color: color,
+              }
+            : undefined;
 
         traces.push({
           x: v,
           y: y,
           type: "scatter",
-          mode: "lines",
+          mode: traceMode as any,
           name: label,
           line: {
-            color: getSeriesColor(rIdx),
-            width: 1.8,
+            color: color,
+            width: strokeWidth,
           },
+          marker: markerConfig,
           hovertemplate: `<b>${label}</b><br>E: %{x:.4f} V<br>I: %{y:.4f}<extra></extra>`,
         });
       });
@@ -99,43 +117,67 @@ export function CVPlot({
         const rawI = seg.data.current_ma || [];
         const y = calculateY(rawI, massMg, areaCm2);
 
+        const color = getPaletteColor(styleConfig.paletteId, seg.segment_index - 1);
         const cycleLabel = `Cycle ${seg.segment_index}${
           seg.scan_rate_mv_s ? ` (${seg.scan_rate_mv_s} mV/s)` : ""
         }`;
+
+        const markerConfig: any =
+          traceMode === "lines+markers"
+            ? {
+                symbol: isMarkerOpen ? "circle-open" : "circle",
+                size: styleConfig.markerSize || 5,
+                color: color,
+              }
+            : undefined;
 
         traces.push({
           x: v,
           y: y,
           type: "scatter",
-          mode: "lines",
+          mode: traceMode as any,
           name: cycleLabel,
           line: {
-            color: getSeriesColor(seg.segment_index - 1),
-            width: 1.6,
+            color: color,
+            width: strokeWidth,
           },
+          marker: markerConfig,
           hovertemplate: `<b>${cycleLabel}</b><br>E: %{x:.4f} V<br>I: %{y:.4f}<extra></extra>`,
         });
       });
     }
 
     return traces;
-  }, [segments, overlayRuns, unit, selectedCycle, massMg, areaCm2]);
+  }, [segments, overlayRuns, unit, selectedCycle, massMg, areaCm2, styleConfig]);
 
   const yAxisLabel = React.useMemo(() => {
     switch (unit) {
       case "gravimetric":
-        return "Specific Current (A·g⁻¹)";
+        return "Current density (A g⁻¹)";
       case "areal":
-        return "Current Density (mA·cm⁻²)";
+        return "Current density (mA cm⁻²)";
       case "raw":
       default:
         return "Current (mA)";
     }
   }, [unit]);
 
+  const defaultXTitle = `Potential (V vs ${referenceElectrode})`;
+
+  // Apply publication styling to Plotly layout
+  const styledLayout = React.useMemo(() => {
+    return applyStyleToPlotlyLayout(
+      {},
+      styleConfig,
+      defaultXTitle,
+      yAxisLabel,
+      title
+    );
+  }, [styleConfig, defaultXTitle, yAxisLabel, title]);
+
   return (
     <div className="flex flex-col h-full space-y-3">
-      {/* Chart toolbar controls */}
+      {/* Unit normalization toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-1">
         <div className="flex items-center gap-1.5">
           <span className="text-[11px] font-medium text-ink-muted">Normalize:</span>
@@ -143,7 +185,7 @@ export function CVPlot({
             <button
               onClick={() => setUnit("raw")}
               className={`px-2.5 py-1 text-xs rounded transition-colors ${
-                unit === "raw" ? "bg-surface text-ink font-medium shadow-sm" : "text-ink-muted hover:text-ink"
+                unit === "raw" ? "bg-surface text-ink font-medium shadow-xs" : "text-ink-muted hover:text-ink"
               }`}
             >
               Raw (mA)
@@ -154,21 +196,21 @@ export function CVPlot({
               title={!hasMass ? "Specify active mass in sample parameters first" : ""}
               className={`px-2.5 py-1 text-xs rounded transition-colors ${
                 unit === "gravimetric"
-                  ? "bg-surface text-ink font-medium shadow-sm"
+                  ? "bg-surface text-ink font-medium shadow-xs"
                   : "text-ink-muted hover:text-ink disabled:opacity-40"
               }`}
             >
-              A/g (Mass)
+              A g⁻¹ (Mass)
             </button>
             <button
               onClick={() => setUnit("areal")}
               className={`px-2.5 py-1 text-xs rounded transition-colors ${
                 unit === "areal"
-                  ? "bg-surface text-ink font-medium shadow-sm"
+                  ? "bg-surface text-ink font-medium shadow-xs"
                   : "text-ink-muted hover:text-ink"
               }`}
             >
-              mA/cm² (Area)
+              mA cm⁻² (Area)
             </button>
           </div>
         </div>
@@ -194,27 +236,12 @@ export function CVPlot({
       </div>
 
       {/* Plot Canvas */}
-      <div className="w-full flex-1 min-h-[440px] bg-surface border border-border rounded p-2">
+      <div className="w-full flex-1 min-h-[440px] bg-surface border border-border rounded-lg p-2.5 flex items-center justify-center">
         <PlotContainer
+          plotId={plotId}
           data={plotData}
-          layout={{
-            title: title ? { text: title, font: { size: 13, color: "#262B3A" } } : undefined,
-            xaxis: {
-              title: { text: `Potential vs ${referenceElectrode} (V)`, font: { size: 11, color: "#262B3A" } },
-              zeroline: true,
-            },
-            yaxis: {
-              title: { text: yAxisLabel, font: { size: 11, color: "#262B3A" } },
-              zeroline: true,
-            },
-            showlegend: true,
-            legend: {
-              orientation: "h",
-              y: -0.2,
-              x: 0,
-              font: { size: 10 },
-            },
-          }}
+          layout={styledLayout}
+          aspectRatio={styleConfig.aspectRatio}
         />
       </div>
     </div>

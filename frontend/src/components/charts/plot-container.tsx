@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import type { PlotParams } from "react-plotly.js";
+import { AspectRatioMode } from "@/lib/plot-style";
 
 // Dynamically import react-plotly.js with SSR disabled
 const Plot = dynamic(() => import("react-plotly.js"), {
@@ -19,38 +19,48 @@ export interface PlotContainerProps {
   layout?: any;
   config?: any;
   className?: string;
+  plotId?: string;
+  aspectRatio?: AspectRatioMode;
   [key: string]: any;
 }
 
-export function PlotContainer({ className, layout, config, data, ...props }: PlotContainerProps) {
+export function PlotContainer({
+  className,
+  layout,
+  config,
+  data,
+  plotId = "chemplot-active-chart",
+  aspectRatio = "auto",
+  ...props
+}: PlotContainerProps) {
   const mergedLayout: Partial<Plotly.Layout> = {
     autosize: true,
     paper_bgcolor: "#FFFFFF",
     plot_bgcolor: "#FFFFFF",
     font: {
-      family: "Inter, -apple-system, sans-serif",
+      family: "Arial, -apple-system, sans-serif",
       size: 11,
-      color: "#262B3A",
+      color: "#000000",
     },
-    margin: { l: 60, r: 25, t: 30, b: 50 },
+    margin: { l: 65, r: 35, t: 35, b: 55 },
     hovermode: "closest",
+    ...layout,
     xaxis: {
       gridcolor: "#EEF0F6",
-      zerolinecolor: "#DDE1EA",
-      tickfont: { family: "JetBrains Mono, monospace", size: 10, color: "#6B7280" },
+      zeroline: false,
+      tickfont: { family: "Arial, sans-serif", size: 10, color: "#000000" },
       showline: true,
-      linecolor: "#DDE1EA",
+      linecolor: "#000000",
       ...layout?.xaxis,
     },
     yaxis: {
       gridcolor: "#EEF0F6",
-      zerolinecolor: "#DDE1EA",
-      tickfont: { family: "JetBrains Mono, monospace", size: 10, color: "#6B7280" },
+      zeroline: false,
+      tickfont: { family: "Arial, sans-serif", size: 10, color: "#000000" },
       showline: true,
-      linecolor: "#DDE1EA",
+      linecolor: "#000000",
       ...layout?.yaxis,
     },
-    ...layout,
   };
 
   const mergedConfig: Partial<Plotly.Config> = {
@@ -60,17 +70,31 @@ export function PlotContainer({ className, layout, config, data, ...props }: Plo
     modeBarButtonsToRemove: ["lasso2d", "select2d"],
     toImageButtonOptions: {
       format: "png",
-      filename: "chemplot_export",
-      height: 700,
-      width: 900,
-      scale: 3,
+      filename: "chemplot_publication_figure",
+      height: 800,
+      width: 1000,
+      scale: 3.5, // 300+ DPI high resolution
     },
     ...config,
   };
 
+  let aspectClass = "w-full min-h-[440px]";
+  if (aspectRatio === "square") {
+    aspectClass = "w-full max-w-[560px] mx-auto aspect-square min-h-[440px]";
+  } else if (aspectRatio === "journal-4-3") {
+    aspectClass = "w-full max-w-[660px] mx-auto aspect-[4/3] min-h-[440px]";
+  }
+
   return (
-    <div className={`w-full h-full min-h-[420px] ${className || ""}`}>
-      <Plot data={data} layout={mergedLayout} config={mergedConfig} style={{ width: "100%", height: "100%" }} {...props} />
+    <div id={plotId} className={`${aspectClass} ${className || ""}`}>
+      <Plot
+        divId={`${plotId}-inner`}
+        data={data}
+        layout={mergedLayout}
+        config={mergedConfig}
+        style={{ width: "100%", height: "100%" }}
+        {...props}
+      />
     </div>
   );
 }

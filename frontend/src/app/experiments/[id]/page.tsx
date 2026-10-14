@@ -21,6 +21,8 @@ import { BodePlot } from "@/components/charts/bode-plot";
 import { CVAnalysisCard } from "@/components/analysis/cv-analysis-card";
 import { GCDAnalysisCard } from "@/components/analysis/gcd-analysis-card";
 import { PEISAnalysisCard } from "@/components/analysis/peis-analysis-card";
+import { PlotCustomizer } from "@/components/charts/plot-customizer";
+import { PlotStyleConfig, PRESETS } from "@/lib/plot-style";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,7 +74,8 @@ export default function ExperimentPage() {
   const [showParamsModal, setShowParamsModal] = React.useState(false);
   const [showUploadModal, setShowUploadModal] = React.useState(false);
   const [exportFormat, setExportFormat] = React.useState<"png" | "svg" | "pdf">("png");
-  const [exportTemplate, setExportTemplate] = React.useState<"nature" | "acs" | "default">("nature");
+  const [exportTemplate, setExportTemplate] = React.useState<"nature" | "acs" | "default">("acs");
+  const [plotStyle, setPlotStyle] = React.useState<PlotStyleConfig>(PRESETS.acs);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchExperiment = React.useCallback(async (silent = false) => {
@@ -163,6 +166,35 @@ export default function ExperimentPage() {
     }
   }, [activeTab, experiment, selectedRunId, overlayData, plotMode, currentTechnique]);
 
+  // High-resolution client export preserving exact custom parameters
+  const handleClientExport = React.useCallback(async (format: "png" | "svg") => {
+    try {
+      const Plotly = (await import("plotly.js-dist-min")).default || (window as any).Plotly;
+      const chartEl = document.querySelector(".js-plotly-plot") as any;
+      if (chartEl && Plotly) {
+        const isSquare = plotStyle.aspectRatio === "square";
+        await Plotly.downloadImage(chartEl, {
+          format: format,
+          width: isSquare ? 800 : 960,
+          height: isSquare ? 800 : 720,
+          filename: `${experiment?.name?.replace(/\s+/g, "_") || "chemplot"}_${plotStyle.presetName}_figure`,
+        });
+        if (experiment) {
+          trackFigureExported({
+            experimentId: experiment.id,
+            runId: selectedRunId || "overlay",
+            technique: currentTechnique || "Plot",
+            format: format,
+            template: plotStyle.presetName,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Export failed:", err);
+    }
+  }, [experiment, selectedRunId, currentTechnique, plotStyle]);
+
+
   const cvOverlayRuns = overlayData?.runs.filter((r) => r.technique === "CV") || [];
   const gcplRuns = overlayData?.runs.filter((r) => r.technique === "GCPL") || [];
   const cyclingRuns = overlayData?.runs.filter((r) => r.technique === "CYCLING") || [];
@@ -207,6 +239,7 @@ export default function ExperimentPage() {
             areaCm2={areaCm2}
             referenceElectrode={refElectrode}
             title={`${experiment.name} — CV Multi-Rate Overlay`}
+            styleConfig={plotStyle}
           />
         );
       }
@@ -217,10 +250,12 @@ export default function ExperimentPage() {
               segments={peisRuns[0]?.segments || []}
               areaCm2={areaCm2}
               title={`${experiment.name} — Nyquist`}
+              styleConfig={plotStyle}
             />
             <BodePlot
               segments={peisRuns[0]?.segments || []}
               title={`${experiment.name} — Bode`}
+              styleConfig={plotStyle}
             />
           </div>
         );
@@ -233,6 +268,7 @@ export default function ExperimentPage() {
               massMg={massMg}
               areaCm2={areaCm2}
               title={`${experiment.name} — Cycling Retention`}
+              styleConfig={plotStyle}
             />
             <GCDPlot
               segments={cyclingRuns[0]?.segments || []}
@@ -240,6 +276,7 @@ export default function ExperimentPage() {
               areaCm2={areaCm2}
               referenceElectrode={refElectrode}
               title={`${experiment.name} — Representative GCD Profile`}
+              styleConfig={plotStyle}
             />
           </div>
         );
@@ -253,6 +290,7 @@ export default function ExperimentPage() {
                 massMg={massMg}
                 areaCm2={areaCm2}
                 title={`${experiment.name} — Capacity Retention`}
+                styleConfig={plotStyle}
               />
             )}
             <GCDPlot
@@ -261,6 +299,7 @@ export default function ExperimentPage() {
               areaCm2={areaCm2}
               referenceElectrode={refElectrode}
               title={`${experiment.name} — GCD Profile`}
+              styleConfig={plotStyle}
             />
           </div>
         );
@@ -285,6 +324,7 @@ export default function ExperimentPage() {
           areaCm2={areaCm2}
           referenceElectrode={refElectrode}
           title={`${experiment.name} — ${selectedRun.original_filename}`}
+          styleConfig={plotStyle}
         />
       );
     }
@@ -296,6 +336,7 @@ export default function ExperimentPage() {
             massMg={massMg}
             areaCm2={areaCm2}
             title={`${experiment.name} — ${selectedRun.original_filename} (Retention)`}
+            styleConfig={plotStyle}
           />
           <GCDPlot
             segments={runSegments}
@@ -303,6 +344,7 @@ export default function ExperimentPage() {
             areaCm2={areaCm2}
             referenceElectrode={refElectrode}
             title={`${experiment.name} — ${selectedRun.original_filename} (Profile)`}
+            styleConfig={plotStyle}
           />
         </div>
       );
@@ -316,6 +358,7 @@ export default function ExperimentPage() {
               massMg={massMg}
               areaCm2={areaCm2}
               title={`${experiment.name} — ${selectedRun.original_filename} (Retention)`}
+              styleConfig={plotStyle}
             />
           )}
           <GCDPlot
@@ -324,6 +367,7 @@ export default function ExperimentPage() {
             areaCm2={areaCm2}
             referenceElectrode={refElectrode}
             title={`${experiment.name} — ${selectedRun.original_filename}`}
+            styleConfig={plotStyle}
           />
         </div>
       );
@@ -335,15 +379,18 @@ export default function ExperimentPage() {
             segments={runSegments}
             areaCm2={areaCm2}
             title={`${experiment.name} — Nyquist`}
+            styleConfig={plotStyle}
           />
           <BodePlot
             segments={runSegments}
             title={`${experiment.name} — Bode`}
+            styleConfig={plotStyle}
           />
         </div>
       );
     }
     return null;
+
   };
 
   const renderAnalysis = () => {
@@ -568,7 +615,28 @@ export default function ExperimentPage() {
             />
 
             {activeTab === "plot" && (
-              <div className="min-h-[500px]">
+              <div className="space-y-3 min-h-[500px]">
+                {hasParsedRuns && (
+                  <PlotCustomizer
+                    styleConfig={plotStyle}
+                    onChange={setPlotStyle}
+                    defaultXTitle={
+                      currentTechnique === "CV"
+                        ? `Potential (V vs ${refElectrode})`
+                        : currentTechnique === "GCPL"
+                        ? "Specific capacity (mAh g⁻¹)"
+                        : "Frequency (Hz)"
+                    }
+                    defaultYTitle={
+                      currentTechnique === "CV"
+                        ? "Current density (A g⁻¹)"
+                        : currentTechnique === "GCPL"
+                        ? `Potential (V vs ${refElectrode})`
+                        : "-Z'' (Ω)"
+                    }
+                    onExport={handleClientExport}
+                  />
+                )}
                 {renderPlot()}
               </div>
             )}
